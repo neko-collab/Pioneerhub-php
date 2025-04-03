@@ -1,14 +1,22 @@
 <?php
-header("Content-Type: application/json");
-
-$host = "localhost";
-$user = "root";
+// Database connection
+$servername = "localhost";
+$username = "root";
 $password = "";
-$database = "pioneer_hub";
+$dbname = "pioneer_hub";
 
-$conn = mysqli_connect($host, $user, $password, $database);
+// Create connection with error handling
+try {
+    mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT); // Enable exceptions
+    $conn = new mysqli($servername, $username, $password, $dbname);
+    $conn->set_charset("utf8mb4");
+} catch (mysqli_sql_exception $e) {
+    // Handle connection errors
+    die("Database Connection Failed: " . $e->getMessage());
+}
 
-if (!$conn) {
-    die(json_encode(["status" => "error", "message" => "Database connection failed"]));
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
 }
 ?>

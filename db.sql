@@ -262,6 +262,21 @@ INSERT INTO `users` (`id`, `name`, `email`, `password_hash`, `profile_pic`, `cv`
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `instructor_details`
+--
+
+CREATE TABLE `instructor_details` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `specialization` varchar(255) DEFAULT NULL,
+  `bio` text DEFAULT NULL,
+  `qualification` varchar(255) DEFAULT NULL,
+  `experience_years` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
 -- Table structure for table `user_tokens`
 --
 
@@ -366,6 +381,13 @@ ALTER TABLE `users`
   ADD UNIQUE KEY `email` (`email`);
 
 --
+-- Indexes for table `instructor_details`
+--
+ALTER TABLE `instructor_details`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `user_id` (`user_id`);
+
+--
 -- Indexes for table `user_tokens`
 --
 ALTER TABLE `user_tokens`
@@ -449,6 +471,12 @@ ALTER TABLE `users`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
+-- AUTO_INCREMENT for table `instructor_details`
+--
+ALTER TABLE `instructor_details`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `user_tokens`
 --
 ALTER TABLE `user_tokens`
@@ -522,6 +550,12 @@ ALTER TABLE `projects`
 ALTER TABLE `project_collaborations`
   ADD CONSTRAINT `project_collaborations_ibfk_1` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `project_collaborations_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `instructor_details`
+--
+ALTER TABLE `instructor_details`
+  ADD CONSTRAINT `instructor_details_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `user_tokens`
