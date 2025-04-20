@@ -14,8 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'add') {
         // Get form data
-        $title = $_POST['title'] ?? '';
-        $description = $_POST['description'] ?? '';
+        $title = htmlspecialchars($_POST['title'] ?? '');
+        $description = htmlspecialchars($_POST['description'] ?? '');
         $price = $_POST['price'] ?? 0;
         $instructor_id = $_POST['instructor_id'] ?? '';
         $is_trending = isset($_POST['is_trending']) ? 1 : 0;
@@ -42,8 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'edit') {
         // Get form data
         $course_id = $_POST['course_id'] ?? '';
-        $title = $_POST['title'] ?? '';
-        $description = $_POST['description'] ?? '';
+        $title = htmlspecialchars($_POST['title'] ?? '');
+        $description = htmlspecialchars($_POST['description'] ?? '');
         $price = $_POST['price'] ?? 0;
         $instructor_id = $_POST['instructor_id'] ?? '';
         $is_trending = isset($_POST['is_trending']) ? 1 : 0;

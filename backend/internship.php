@@ -7,11 +7,18 @@ session_start();
 $request_method = $_SERVER["REQUEST_METHOD"];
 
 if ($request_method === "POST") {
-    $data = json_decode(file_get_contents("php://input"), true);
+    // Check for multipart form data (file uploads)
+    if (isset($_POST['action'])) {
+        $data = $_POST;
+    } else {
+        // Regular JSON request
+        $data = json_decode(file_get_contents("php://input"), true);
+    }
+    
     $headers = apache_request_headers();
     
-    if (isset($headers['Authorization'])) {
-        $token = str_replace('Bearer ', '', $headers['Authorization']);
+    if (isset($headers['authorization'])) {
+        $token = str_replace('Bearer ', '', $headers['authorization']); 
         $decoded = validateJWT($token);
         if (!$decoded) {
             sendResponse(401, "Unauthorized");
@@ -51,6 +58,13 @@ if ($request_method === "POST") {
             case "applyInternship":
                 if ($user_role === 'user') {
                     applyInternship($data, $user_id, $user_role);
+                } else {
+                    sendResponse(403, "Permission denied");
+                }
+                break;
+            case "myApplications":
+                if ($user_role === 'user') {
+                    myApplications($user_id);
                 } else {
                     sendResponse(403, "Permission denied");
                 }
@@ -232,12 +246,54 @@ function applyInternship($data, $user_id, $user_role) {
     }
 
     $internship_id = $data["internship_id"];
+    $cv_path = null;
+    
+    // Handle CV file upload
+    if (isset($_FILES['cv']) && $_FILES['cv']['error'] === UPLOAD_ERR_OK) {
+        $upload_dir = '../uploads/cv/';
+        
+        // Create directory if it doesn't exist
+        if (!file_exists($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+        }
+        
+        $file_name = $user_id . '_' . time() . '_' . basename($_FILES['cv']['name']);
+        $target_file = $upload_dir . $file_name;
+        
+        if (move_uploaded_file($_FILES['cv']['tmp_name'], $target_file)) {
+            $cv_path = $target_file;
+        } else {
+            sendResponse(500, "Failed to upload CV file");
+        }
+    }
 
-    $query = "INSERT INTO internship_applications (user_id, internship_id, applied_at, status) VALUES (?, ?, NOW(), 'pending')";
-    if (executeQuery($query, [$user_id, $internship_id], "ii")) {
+    $query = "INSERT INTO internship_applications (user_id, internship_id, applied_at, status, cv) VALUES (?, ?, NOW(), 'pending', ?)";
+    if (executeQuery($query, [$user_id, $internship_id, $cv_path], "iis")) {
         sendResponse(200, "Internship application successful");
     } else {
         sendResponse(500, "Failed to apply for internship");
+    }
+}
+
+function myApplications($user_id) {
+    $query = "SELECT ia.id, ia.status, ia.applied_at, ia.cv,i.id as internship_id, i.title, i.company, i.location, i.internship_type 
+              FROM internship_applications ia 
+              JOIN internships i ON ia.internship_id = i.id 
+              WHERE ia.user_id = ? 
+              ORDER BY ia.applied_at DESC";
+    
+    $result = executeQuery($query, [$user_id], "i");
+    
+    if ($result) {
+        $applications = [];
+        $result_set = $result->get_result();
+        while ($row = $result_set->fetch_assoc()) {
+            $applications[] = $row;
+        }
+        $result_set->close();
+        sendResponse(200, "Your internship applications", $applications);
+    } else {
+        sendResponse(500, "Failed to retrieve applications");
     }
 }
 
@@ -248,14 +304,18 @@ function internshipApplications($data, $user_role) {
 
     $internship_id = $data["internship_id"];
 
-    $result = executeQuery("SELECT users.id, users.name, users.email, internship_applications.status FROM users JOIN internship_applications ON users.id = internship_applications.user_id WHERE internship_applications.internship_id=?", [$internship_id], "i");
+    $result = executeQuery("SELECT ia.id as application_id, users.id, users.name, users.email, ia.status, ia.cv, ia.applied_at 
+                          FROM users 
+                          JOIN internship_applications ia ON users.id = ia.user_id 
+                          WHERE ia.internship_id=?", 
+                          [$internship_id], "i");
     if ($result) {
         $applications = [];
         $result_set = $result->get_result();
         while ($row = $result_set->fetch_assoc()) {
             $applications[] = $row;
         }
-        $result_set->close(); // Close the result set
+        $result_set->close();
         sendResponse(200, "Internship applications list", $applications);
     } else {
         sendResponse(500, "Failed to execute query");
@@ -277,6 +337,5 @@ function toggleApplicationStatus($data, $user_role) {
         sendResponse(500, "Failed to update application status");
     }
 }
-
 
 ?>

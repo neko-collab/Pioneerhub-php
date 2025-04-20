@@ -78,7 +78,7 @@ if ($result) {
 // Fetch applications for this job
 $applications = [];
 $result = executeQuery(
-    "SELECT ja.*, u.name, u.email, u.profile_pic, u.cv
+    "SELECT ja.*, u.name, u.email, u.profile_pic
      FROM job_applications ja
      JOIN users u ON ja.user_id = u.id
      WHERE ja.job_id=?
@@ -116,14 +116,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         $check_set->close();
         
+        // Handle CV file upload
+        $cv_filename = null;
+        if (isset($_FILES['cv_file']) && $_FILES['cv_file']['error'] == 0) {
+            $allowed_extensions = ['pdf', 'doc', 'docx'];
+            $file_extension = strtolower(pathinfo($_FILES['cv_file']['name'], PATHINFO_EXTENSION));
+            
+            if (in_array($file_extension, $allowed_extensions)) {
+                // Create uploads/cvs directory if it doesn't exist
+                $upload_dir = '../uploads/job_cv';
+                if (!file_exists($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                
+                // Generate unique filename
+                $cv_filename = 'cv_' . $user_id . '_' . time() . '.' . $file_extension;
+                $upload_path = $upload_dir . '/' . $cv_filename;
+                
+                // Move uploaded file
+                if (move_uploaded_file($_FILES['cv_file']['tmp_name'], $upload_path)) {
+                    // Update user's CV in the users table
+                    executeQuery(
+                        "UPDATE users SET cv = ? WHERE id = ?",
+                        [$cv_filename, $user_id],
+                        "si"
+                    );
+                } else {
+                    header("Location: job_applications.php?id=$job_id&error=upload_failed");
+                    exit;
+                }
+            } else {
+                header("Location: job_applications.php?id=$job_id&error=invalid_file_type");
+                exit;
+            }
+        }
+        
         // Add new application
         $result = executeQuery(
-            "INSERT INTO job_applications (user_id, job_id, applied_at, status) VALUES (?, ?, NOW(), ?)",
-            [$user_id, $job_id, $status],
-            "iis"
+            "INSERT INTO job_applications (user_id, job_id, cv, status, applied_at) VALUES (?, ?, ?, ?, NOW())",
+            [$user_id, $job_id, $cv_filename, $status],
+            "iiss"
         );
         
-        header("Location: job_applications.php?id=$job_id&msg=application_added");
+        if ($result) {
+            header("Location: job_applications.php?id=$job_id&msg=application_added");
+        } else {
+            header("Location: job_applications.php?id=$job_id&error=db_error");
+        }
         exit;
     } else {
         header("Location: job_applications.php?id=$job_id&error=invalid_user");
@@ -198,6 +237,21 @@ include 'includes/header.php';
         <?php elseif ($_GET['error'] === 'invalid_user'): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 Please select a valid user.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php elseif ($_GET['error'] === 'upload_failed'): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                Failed to upload CV file. Please try again.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php elseif ($_GET['error'] === 'invalid_file_type'): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                Invalid file type. Only PDF, DOC, and DOCX files are allowed.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php elseif ($_GET['error'] === 'db_error'): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                Database error occurred. Please try again.
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
@@ -419,7 +473,7 @@ include 'includes/header.php';
                                     <td><?= htmlspecialchars($app['email']) ?></td>
                                     <td>
                                         <?php if ($app['cv']): ?>
-                                            <a href="../uploads/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <a href="../uploads/cvs/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-file-pdf"></i> View CV
                                             </a>
                                         <?php else: ?>
@@ -483,7 +537,7 @@ include 'includes/header.php';
                 <h5 class="modal-title" id="addApplicationModalLabel">Add New Application</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="" method="post">
+            <form action="" method="post" enctype="multipart/form-data">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="add_application">
                     
@@ -507,6 +561,11 @@ include 'includes/header.php';
                             <option value="accepted">Accepted</option>
                             <option value="rejected">Rejected</option>
                         </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="cv_file" class="form-label">Upload CV</label>
+                        <input type="file" class="form-control" id="cv_file" name="cv_file" accept=".pdf,.doc,.docx">
                     </div>
                 </div>
                 <div class="modal-footer">

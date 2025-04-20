@@ -16,8 +16,8 @@ if ($request_method === "POST") {
     $data = json_decode(file_get_contents("php://input"), true);
     $headers = apache_request_headers();
     
-    if (isset($headers['Authorization'])) {
-        $token = str_replace('Bearer ', '', $headers['Authorization']);
+    if (isset($headers['authorization'])) {
+        $token = str_replace('Bearer ', '', $headers['authorization']);
         $decoded = validateJWT($token);
         if (!$decoded) {
             sendResponse(401, "Unauthorized");

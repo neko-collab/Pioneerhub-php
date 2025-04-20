@@ -98,7 +98,12 @@ function loginUser($data) {
     $email = $data["email"];
     $password = $data["password"];
     
-    $result = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s")->get_result();
+    $stmt = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s");
+    if (!$stmt) {
+        sendResponse(500, "Database error occurred");
+    }
+    
+    $result = $stmt->get_result();
     if ($row = $result->fetch_assoc()) {
         if (password_verify($password, $row['password_hash'])) {
             $token = generateJWT($row['id'], $row['email'], $row['role']);

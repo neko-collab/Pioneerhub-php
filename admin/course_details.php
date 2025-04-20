@@ -76,9 +76,10 @@ if ($result) {
 // Fetch registrations for this course
 $registrations = [];
 $result = executeQuery(
-    "SELECT cr.*, u.name, u.email
+    "SELECT cr.*, u.name, u.email, p.payment_status, p.payment_gateway, p.transaction_id
      FROM course_registrations cr
      JOIN users u ON cr.user_id = u.id
+     LEFT JOIN payments p ON cr.user_id = p.user_id AND cr.course_id = p.course_id
      WHERE cr.course_id=?
      ORDER BY cr.registered_at DESC", 
     [$course_id], 
@@ -97,6 +98,9 @@ if ($result) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_registration') {
     $user_id = $_POST['user_id'] ?? '';
     $verified = isset($_POST['verified']) ? 1 : 0;
+    $payment_status = $_POST['payment_status'] ?? 'pending';
+    $payment_gateway = $_POST['payment_gateway'] ?? '';
+    $transaction_id = $_POST['transaction_id'] ?? '';
     
     if (!empty($user_id)) {
         // Check if registration already exists
@@ -114,15 +118,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         $check_set->close();
         
-        // Add new registration
-        $result = executeQuery(
-            "INSERT INTO course_registrations (user_id, course_id, registered_at, verified) VALUES (?, ?, NOW(), ?)",
-            [$user_id, $course_id, $verified],
-            "iii"
-        );
+        // Begin transaction
+        global $conn;
+        $conn->begin_transaction();
         
-        header("Location: course_details.php?id=$course_id&msg=registration_added");
-        exit;
+        try {
+            // Add new registration
+            $result = executeQuery(
+                "INSERT INTO course_registrations (user_id, course_id, registered_at, verified) VALUES (?, ?, NOW(), ?)",
+                [$user_id, $course_id, $verified],
+                "iii"
+            );
+            
+            // Add payment record
+            $amount = $course['price'];
+            executeQuery(
+                "INSERT INTO payments (user_id, course_id, amount, payment_status, payment_gateway, transaction_id, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, NOW())",
+                [$user_id, $course_id, $amount, $payment_status, $payment_gateway, $transaction_id],
+                "iidsss"
+            );
+            
+            // Commit transaction
+            $conn->commit();
+            
+            header("Location: course_details.php?id=$course_id&msg=registration_added");
+            exit;
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $conn->rollback();
+            header("Location: course_details.php?id=$course_id&error=db_error");
+            exit;
+        }
     } else {
         header("Location: course_details.php?id=$course_id&error=invalid_user");
         exit;
@@ -196,6 +223,11 @@ include 'includes/header.php';
         <?php elseif ($_GET['error'] === 'invalid_user'): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 Please select a valid user.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php elseif ($_GET['error'] === 'db_error'): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                A database error occurred. Please try again.
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
@@ -349,14 +381,15 @@ include 'includes/header.php';
                             <th>Student Name</th>
                             <th>Email</th>
                             <th>Registration Date</th>
-                            <th>Status</th>
+                            <th>Verification</th>
+                            <th>Payment</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($registrations)): ?>
                             <tr>
-                                <td colspan="6" class="text-center">No registrations found.</td>
+                                <td colspan="7" class="text-center">No registrations found.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($registrations as $reg): ?>
@@ -370,6 +403,24 @@ include 'includes/header.php';
                                             <span class="badge bg-success">Verified</span>
                                         <?php else: ?>
                                             <span class="badge bg-warning">Pending</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $payment_status_class = 'bg-secondary';
+                                        if ($reg['payment_status'] === 'completed') {
+                                            $payment_status_class = 'bg-success';
+                                        } elseif ($reg['payment_status'] === 'pending') {
+                                            $payment_status_class = 'bg-warning';
+                                        } elseif ($reg['payment_status'] === 'failed') {
+                                            $payment_status_class = 'bg-danger';
+                                        }
+                                        ?>
+                                        <span class="badge <?= $payment_status_class ?>">
+                                            <?= ucfirst($reg['payment_status'] ?? 'N/A') ?>
+                                        </span>
+                                        <?php if (!empty($reg['transaction_id'])): ?>
+                                            <span class="badge bg-info" title="Transaction ID"><?= htmlspecialchars($reg['transaction_id']) ?></span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -424,6 +475,28 @@ include 'includes/header.php';
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="verified" name="verified">
                         <label class="form-check-label" for="verified">Mark as Verified</label>
+                    </div>
+                    
+                    <hr>
+                    <h6>Payment Information</h6>
+                    
+                    <div class="mb-3">
+                        <label for="payment_status" class="form-label">Payment Status</label>
+                        <select class="form-control" id="payment_status" name="payment_status" required>
+                            <option value="pending">Pending</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="payment_gateway" class="form-label">Payment Gateway</label>
+                        <input type="text" class="form-control" id="payment_gateway" name="payment_gateway" placeholder="e.g., Esewa, Khalti, Cash">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="transaction_id" class="form-label">Transaction ID</label>
+                        <input type="text" class="form-control" id="transaction_id" name="transaction_id" placeholder="Transaction reference number">
                     </div>
                 </div>
                 <div class="modal-footer">

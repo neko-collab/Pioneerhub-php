@@ -10,9 +10,8 @@ $request_method = $_SERVER["REQUEST_METHOD"];
 if ($request_method === "POST") {
     $data = json_decode(file_get_contents("php://input"), true);
     $headers = apache_request_headers();
-    
-    if (isset($headers['Authorization'])) {
-        $token = str_replace('Bearer ', '', $headers['Authorization']);
+    if (isset($headers['authorization'])) {
+        $token = str_replace('Bearer ', '', $headers['authorization']);
         $decoded = validateJWT($token);
         if (!$decoded) {
             sendResponse(401, "Unauthorized");
@@ -49,6 +48,9 @@ if ($request_method === "POST") {
             case "toggleVerification":
                 toggleVerification($data, $user_role);
                 break;
+            case "myEnrolledCourses":
+                myEnrolledCourses($user_id);
+                break;
             default:
                 sendResponse(400, "Invalid action");
         }
@@ -75,17 +77,11 @@ if ($request_method === "POST") {
             foreach ($courses as $key => $course) {
                 // Get instructor's additional details
                 $instructor_id = $course['instructor_id'];
-                $instructor_result = executeQuery("SELECT * FROM instructor_details WHERE user_id=?", [$instructor_id], "i");
-                if ($instructor_result) {
-                    $instructor_result_set = $instructor_result->get_result();
-                    if ($instructor_details = $instructor_result_set->fetch_assoc()) {
-                        $courses[$key]['instructor_bio'] = $instructor_details['bio'];
-                        $courses[$key]['instructor_qualifications'] = $instructor_details['qualifications'];
-                        $courses[$key]['instructor_expertise'] = $instructor_details['expertise_areas'];
-                        $courses[$key]['instructor_experience'] = $instructor_details['years_experience'];
-                    }
-                    $instructor_result_set->close(); // Close the result set
-                }
+                $instructor_details = getInstructorDetails($instructor_id);
+                $courses[$key]['instructor_bio'] = $instructor_details['bio'];
+                $courses[$key]['instructor_qualifications'] = isset($instructor_details['qualifications']) ? $instructor_details['qualifications'] : '';
+                $courses[$key]['instructor_expertise'] = isset($instructor_details['expertise_areas']) ? $instructor_details['expertise_areas'] : '';
+                $courses[$key]['instructor_experience'] = isset($instructor_details['years_experience']) ? $instructor_details['years_experience'] : 0;
                 
                 // Get number of students enrolled in the course
                 $course_id = $course['id'];
@@ -194,17 +190,11 @@ function viewCourse($data) {
             
             // Get instructor's additional details
             $instructor_id = $course['instructor_id'];
-            $instructor_result = executeQuery("SELECT * FROM instructor_details WHERE user_id=?", [$instructor_id], "i");
-            if ($instructor_result) {
-                $instructor_result_set = $instructor_result->get_result();
-                if ($instructor_details = $instructor_result_set->fetch_assoc()) {
-                    $course['instructor_bio'] = $instructor_details['bio'];
-                    $course['instructor_qualifications'] = $instructor_details['qualifications'];
-                    $course['instructor_expertise'] = $instructor_details['expertise_areas'];
-                    $course['instructor_experience'] = $instructor_details['years_experience'];
-                }
-                $instructor_result_set->close(); // Close the result set
-            }
+            $instructor_details = getInstructorDetails($instructor_id);
+            $course['instructor_bio'] = $instructor_details['bio'];
+            $course['instructor_qualifications'] = isset($instructor_details['qualifications']) ? $instructor_details['qualifications'] : '';
+            $course['instructor_expertise'] = isset($instructor_details['expertise_areas']) ? $instructor_details['expertise_areas'] : '';
+            $course['instructor_experience'] = isset($instructor_details['years_experience']) ? $instructor_details['years_experience'] : 0;
             
             // Get number of students enrolled in the course
             $students_result = executeQuery("SELECT COUNT(*) as student_count FROM course_registrations WHERE course_id=?", [$id], "i");
@@ -241,17 +231,11 @@ function listCourses() {
         foreach ($courses as $key => $course) {
             // Get instructor's additional details
             $instructor_id = $course['instructor_id'];
-            $instructor_result = executeQuery("SELECT * FROM instructor_details WHERE user_id=?", [$instructor_id], "i");
-            if ($instructor_result) {
-                $instructor_result_set = $instructor_result->get_result();
-                if ($instructor_details = $instructor_result_set->fetch_assoc()) {
-                    $courses[$key]['instructor_bio'] = $instructor_details['bio'];
-                    $courses[$key]['instructor_qualifications'] = $instructor_details['qualifications'];
-                    $courses[$key]['instructor_expertise'] = $instructor_details['expertise_areas'];
-                    $courses[$key]['instructor_experience'] = $instructor_details['years_experience'];
-                }
-                $instructor_result_set->close(); // Close the result set
-            }
+            $instructor_details = getInstructorDetails($instructor_id);
+            $courses[$key]['instructor_bio'] = $instructor_details['bio'];
+            $courses[$key]['instructor_qualifications'] = isset($instructor_details['qualifications']) ? $instructor_details['qualifications'] : '';
+            $courses[$key]['instructor_expertise'] = isset($instructor_details['expertise_areas']) ? $instructor_details['expertise_areas'] : '';
+            $courses[$key]['instructor_experience'] = isset($instructor_details['years_experience']) ? $instructor_details['years_experience'] : 0;
             
             // Get number of students enrolled in the course
             $course_id = $course['id'];
@@ -323,7 +307,7 @@ function instructorsCourses($data) {
 
 function registerCourse($data, $user_id, $user_role) {
     if ($user_role !== 'user') {
-        sendResponse(403, "Permission denied");
+        sendResponse(403, "You must be logged in as a user");
     }
 
     if (!isset($data["course_id"])) {
@@ -383,5 +367,84 @@ function toggleVerification($data, $user_role) {
     } else {
         sendResponse(500, "Failed to update verification status");
     }
+}
+
+// Function to get user's enrolled courses
+function myEnrolledCourses($user_id) {
+    // Get all courses the user is enrolled in
+    $result = executeQuery(
+        "SELECT courses.*, users.name as instructor_name, users.email as instructor_email, 
+         course_registrations.registered_at, course_registrations.verified 
+         FROM course_registrations 
+         JOIN courses ON course_registrations.course_id = courses.id 
+         JOIN users ON courses.instructor_id = users.id 
+         WHERE course_registrations.user_id = ?", 
+        [$user_id], 
+        "i"
+    );
+    
+    if ($result) {
+        $courses = [];
+        $result_set = $result->get_result();
+        while ($row = $result_set->fetch_assoc()) {
+            $courses[] = $row;
+        }
+        $result_set->close();
+        
+        // Get additional information for each course
+        foreach ($courses as $key => $course) {
+            // Get instructor's additional details
+            $instructor_id = $course['instructor_id'];
+            $instructor_details = getInstructorDetails($instructor_id);
+            $courses[$key]['instructor_bio'] = $instructor_details['bio'];
+            $courses[$key]['instructor_qualifications'] = isset($instructor_details['qualifications']) ? $instructor_details['qualifications'] : '';
+            $courses[$key]['instructor_expertise'] = isset($instructor_details['expertise_areas']) ? $instructor_details['expertise_areas'] : '';
+            $courses[$key]['instructor_experience'] = isset($instructor_details['years_experience']) ? $instructor_details['years_experience'] : 0;
+        }
+        
+        sendResponse(200, "My enrolled courses", $courses);
+    } else {
+        sendResponse(500, "Failed to retrieve enrolled courses");
+    }
+}
+
+// This section is for retrieving instructor details
+function getInstructorDetails($instructor_id) {
+    $result = executeQuery(
+        "SELECT * FROM instructor_details WHERE user_id = ?",
+        [$instructor_id],
+        "i"
+    );
+    
+    if ($result) {
+        $result_set = $result->get_result();
+        if ($row = $result_set->fetch_assoc()) {
+            $result_set->close();
+            return $row;
+        }
+        $result_set->close();
+    }
+    
+    // Return default empty structure if no details found
+    return [
+        'specialization' => '',
+        'bio' => '',
+        'qualification' => '',
+        'experience_years' => 0
+    ];
+}
+
+// When you need to access the instructor details, use the function
+function displayInstructorInfo($instructor_id) {
+    $instructor_details = getInstructorDetails($instructor_id);
+    
+    // Use safeArrayGet to prevent warnings
+    $qualification = safeArrayGet($instructor_details, 'qualification', 'Not specified');
+    $specialization = safeArrayGet($instructor_details, 'specialization', 'Not specified');
+    $experience_years = safeArrayGet($instructor_details, 'experience_years', 0);
+    
+    echo "Qualification: " . htmlspecialchars($qualification) . "<br>";
+    echo "Specialization: " . htmlspecialchars($specialization) . "<br>";
+    echo "Years of Experience: " . intval($experience_years) . "<br>";
 }
 ?>

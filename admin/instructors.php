@@ -103,7 +103,7 @@ include 'includes/header.php';
     <div class="card shadow mb-4">
         <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
             <h6 class="m-0 font-weight-bold text-primary">All Instructors</h6>
-            <a href="users.php?role=instructor" class="btn btn-primary">
+            <a href="add_instructor.php" class="btn btn-primary">
                 <i class="fas fa-plus fa-sm"></i> Add New Instructor
             </a>
         </div>

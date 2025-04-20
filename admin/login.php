@@ -10,8 +10,10 @@ if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true
 }
 
 $error = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    
+
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
     
@@ -92,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="login-container">
         <div class="logo">
             <h1>Pioneer Hub</h1>
-            <p>Admin Portal</p>
+            <p class="text-primary">Admin Portal</p>
         </div>
         
         <?php if (!empty($error)): ?>
