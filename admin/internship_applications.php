@@ -30,6 +30,37 @@ if (isset($_GET['application_id']) && !empty($_GET['application_id']) && isset($
             "si"
         );
         
+        // If status is 'accepted', send email notification
+        if ($status === 'accepted') {
+            // Get applicant info and internship details
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, i.title, i.company 
+                 FROM internship_applications ia
+                 JOIN users u ON ia.user_id = u.id
+                 JOIN internships i ON ia.internship_id = i.id
+                 WHERE ia.id=?",
+                [$application_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once '../backend/mailer.php';
+                    
+                    // Send email notification
+                    sendInternshipApplicationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title'],
+                        $info['company']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         // Redirect back to applications page
         header("Location: internship_applications.php?id=$internship_id&msg=status_updated");
         exit;

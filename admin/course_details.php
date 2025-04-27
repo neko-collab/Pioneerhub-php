@@ -29,6 +29,36 @@ if (isset($_GET['verify_id']) && !empty($_GET['verify_id'])) {
         "ii"
     );
     
+    // If verifying the registration, send email notification
+    if ($status == 1) {
+        // Get user information and course title for the email
+        $info_result = executeQuery(
+            "SELECT u.name, u.email, c.title 
+             FROM course_registrations cr
+             JOIN users u ON cr.user_id = u.id
+             JOIN courses c ON cr.course_id = c.id
+             WHERE cr.id=?",
+            [$registration_id],
+            "i"
+        );
+        
+        if ($info_result) {
+            $info_set = $info_result->get_result();
+            if ($user_info = $info_set->fetch_assoc()) {
+                // Include mailer functions
+                include_once '../backend/mailer.php';
+                
+                // Send email notification
+                sendCourseRegistrationApproval(
+                    $user_info['email'],
+                    $user_info['name'],
+                    $user_info['title']
+                );
+            }
+            $info_set->close();
+        }
+    }
+    
     // Redirect back to course details
     header("Location: course_details.php?id=$course_id&msg=status_updated");
     exit;

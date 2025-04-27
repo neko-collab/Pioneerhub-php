@@ -384,20 +384,15 @@ function listCollaborationRequests($data, $user_id) {
 
     $project_id = $data["project_id"];
     
-    // Check if the user is the owner of the project
+    // Check if the project exists (no longer limiting to only owner)
     $result = executeQuery("SELECT * FROM projects WHERE id=?", [$project_id], "i");
     if ($result) {
         $result_set = $result->get_result();
-        if ($row = $result_set->fetch_assoc()) {
-            if ($row['submitted_by'] != $user_id) {
-                $result_set->close(); // Close the result set
-                sendResponse(403, "Permission denied. You are not the owner of this project.");
-            }
-            $result_set->close(); // Close the result set
-        } else {
+        if (!$result_set->num_rows) {
             $result_set->close(); // Close the result set
             sendResponse(400, "Project not found");
         }
+        $result_set->close(); // Close the result set
     } else {
         sendResponse(500, "Failed to execute query");
     }
@@ -437,9 +432,9 @@ function respondToCollaborationRequest($data, $user_id) {
         sendResponse(400, "Status must be 'approved' or 'rejected'");
     }
     
-    // Get the project ID from the request
+    // Get the project ID and collaboration details from the request
     $result = executeQuery(
-        "SELECT project_collaborations.project_id, projects.submitted_by 
+        "SELECT project_collaborations.project_id, project_collaborations.user_id, projects.submitted_by 
         FROM project_collaborations 
         JOIN projects ON project_collaborations.project_id = projects.id 
         WHERE project_collaborations.id=?", 
@@ -450,10 +445,13 @@ function respondToCollaborationRequest($data, $user_id) {
     if ($result) {
         $result_set = $result->get_result();
         if ($row = $result_set->fetch_assoc()) {
-            // Check if the user is the owner of the project
-            if ($row['submitted_by'] != $user_id) {
+            $project_owner = $row['submitted_by'];
+            $collaboration_user = $row['user_id'];
+            
+            // Allow both the project owner and the collaborator to respond to the request
+            if ($user_id != $project_owner && $user_id != $collaboration_user) {
                 $result_set->close(); // Close the result set
-                sendResponse(403, "Permission denied. You are not the owner of this project.");
+                sendResponse(403, "Permission denied. You must be either the project owner or the collaborator to respond to this request.");
             }
             $result_set->close(); // Close the result set
         } else {

@@ -30,6 +30,37 @@ if (isset($_GET['application_id']) && !empty($_GET['application_id']) && isset($
             "si"
         );
         
+        // If status is 'accepted', send email notification
+        if ($status === 'accepted') {
+            // Get applicant info and job details
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, j.title, j.company 
+                 FROM job_applications ja
+                 JOIN users u ON ja.user_id = u.id
+                 JOIN jobs j ON ja.job_id = j.id
+                 WHERE ja.id=?",
+                [$application_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once '../backend/mailer.php';
+                    
+                    // Send email notification
+                    sendJobApplicationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title'],
+                        $info['company']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         // Redirect back to applications page
         header("Location: job_applications.php?id=$job_id&msg=status_updated");
         exit;
@@ -473,7 +504,7 @@ include 'includes/header.php';
                                     <td><?= htmlspecialchars($app['email']) ?></td>
                                     <td>
                                         <?php if ($app['cv']): ?>
-                                            <a href="../uploads/cvs/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <a href="../<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-file-pdf"></i> View CV
                                             </a>
                                         <?php else: ?>

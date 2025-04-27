@@ -51,6 +51,9 @@ if ($request_method === "POST") {
             case "myEnrolledCourses":
                 myEnrolledCourses($user_id);
                 break;
+            case "processKhaltiPayment":
+                processKhaltiPayment($data, $user_id);
+                break;
             default:
                 sendResponse(400, "Invalid action");
         }
@@ -446,5 +449,131 @@ function displayInstructorInfo($instructor_id) {
     echo "Qualification: " . htmlspecialchars($qualification) . "<br>";
     echo "Specialization: " . htmlspecialchars($specialization) . "<br>";
     echo "Years of Experience: " . intval($experience_years) . "<br>";
+}
+
+// Returns a list of students in a specific course
+function getCourseStudents($course_id) {
+    $result = executeQuery(
+        "SELECT users.id, users.name, users.email, course_registrations.verified, course_registrations.registered_at FROM users JOIN course_registrations ON users.id = course_registrations.user_id WHERE course_registrations.course_id=?",
+        [$course_id],
+        "i"
+    );
+    $students = [];
+    if ($result) {
+        $result_set = $result->get_result();
+        while ($row = $result_set->fetch_assoc()) {
+            $students[] = $row;
+        }
+        $result_set->close();
+    }
+    return $students;
+}
+
+// Process Khalti payment and activate course
+function processKhaltiPayment($data, $user_id) {
+    if (!isset($data["course_id"], $data["token"], $data["transaction_id"])) {
+        sendResponse(400, "Course ID, token, and transaction ID are required");
+    }
+
+    $course_id = $data["course_id"];
+    $token = $data["token"];
+    $transaction_id = $data["transaction_id"];
+    
+    // Check if the course exists
+    $course_result = executeQuery(
+        "SELECT * FROM courses WHERE id = ?", 
+        [$course_id], 
+        "i"
+    );
+    
+    if (!$course_result) {
+        sendResponse(404, "Course not found");
+    }
+    
+    $course_data = $course_result->get_result()->fetch_assoc();
+    if (!$course_data) {
+        sendResponse(404, "Course not found");
+    }
+    
+    // Begin transaction
+    global $conn;
+    $conn->begin_transaction();
+    
+    try {
+        // Check if the user is already registered for this course
+        $registration_check = executeQuery(
+            "SELECT id, verified FROM course_registrations WHERE user_id = ? AND course_id = ?",
+            [$user_id, $course_id],
+            "ii"
+        );
+        
+        $registration_result = $registration_check->get_result();
+        $registration_id = null;
+        
+        if ($registration_result->num_rows > 0) {
+            // If already registered, get the registration ID
+            $registration = $registration_result->fetch_assoc();
+            $registration_id = $registration['id'];
+            
+            // Update existing registration to verified
+            executeQuery(
+                "UPDATE course_registrations SET verified = 1 WHERE id = ?",
+                [$registration_id],
+                "i"
+            );
+        } else {
+            // Create new registration
+            $register_result = executeQuery(
+                "INSERT INTO course_registrations (user_id, course_id, registered_at, verified) VALUES (?, ?, NOW(), 1)",
+                [$user_id, $course_id],
+                "ii"
+            );
+            
+            $registration_id = $conn->insert_id;
+        }
+        
+        // Check if payment already exists for this transaction
+        $payment_check = executeQuery(
+            "SELECT id FROM payments WHERE transaction_id = ? AND user_id = ? AND course_id = ?",
+            [$transaction_id, $user_id, $course_id],
+            "sii"
+        );
+        
+        $payment_result = $payment_check->get_result();
+        
+        if ($payment_result->num_rows == 0) {
+            // Create payment record
+            executeQuery(
+                "INSERT INTO payments (user_id, course_id, amount, payment_status, payment_gateway, transaction_id, created_at) 
+                 VALUES (?, ?, ?, 'completed', 'Khalti', ?, NOW())",
+                [$user_id, $course_id, $course_data['price'], $transaction_id],
+                "iids"
+            );
+        }
+        
+        // Commit the transaction
+        $conn->commit();
+        
+        // Get user details for notification purposes (can be used later)
+        $user_result = executeQuery(
+            "SELECT name, email FROM users WHERE id = ?",
+            [$user_id],
+            "i"
+        );
+        
+        $user_data = $user_result->get_result()->fetch_assoc();
+        
+        if ($user_data) {
+            include_once 'mailer.php';
+            sendCourseRegistrationApproval($user_data['email'], $user_data['name'], $course_data['title']);
+        }
+        
+        sendResponse(200, "Payment processed successfully, course activated");
+        
+    } catch (Exception $e) {
+        // Rollback the transaction on error
+        $conn->rollback();
+        sendResponse(500, "Failed to process payment: " . $e->getMessage());
+    }
 }
 ?>
