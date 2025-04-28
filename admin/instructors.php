@@ -28,13 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $check_result = $check->get_result();
             
             if ($check_result->num_rows > 0) {
-                // Update existing record
-                $row = $check_result->fetch_assoc();
-                $detail_id = $row['id'];
-                
+                // Update existing record - Using user_id in WHERE clause to target specific instructor
                 executeQuery(
-                    "UPDATE instructor_details SET specialization=?, bio=?, qualification=?, experience_years=? WHERE id=?",
-                    [$specialization, $bio, $qualification, $experience_years, $detail_id],
+                    "UPDATE instructor_details SET specialization=?, bio=?, qualification=?, experience_years=? WHERE user_id=?",
+                    [$specialization, $bio, $qualification, $experience_years, $user_id],
                     "sssii"
                 );
                 

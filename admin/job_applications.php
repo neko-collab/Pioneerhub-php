@@ -504,7 +504,7 @@ include 'includes/header.php';
                                     <td><?= htmlspecialchars($app['email']) ?></td>
                                     <td>
                                         <?php if ($app['cv']): ?>
-                                            <a href="../<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <a href="../uploads/cvs/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-file-pdf"></i> View CV
                                             </a>
                                         <?php else: ?>

@@ -366,6 +366,36 @@ function toggleVerification($data, $user_role) {
 
     $query = "UPDATE course_registrations SET verified=? WHERE id=?";
     if (executeQuery($query, [$verified, $registration_id], "ii")) {
+        // If the course is being verified/approved, send a notification email
+        if ($verified == 1) {
+            // Get user and course details
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, c.title 
+                 FROM course_registrations cr
+                 JOIN users u ON cr.user_id = u.id
+                 JOIN courses c ON cr.course_id = c.id
+                 WHERE cr.id=?",
+                [$registration_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once 'mailer.php';
+                    
+                    // Send email notification
+                    sendCourseRegistrationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         sendResponse(200, "Verification status updated successfully");
     } else {
         sendResponse(500, "Failed to update verification status");

@@ -172,7 +172,12 @@
                             Settings
                         </a>
                     </li>
-                  
+                    <li class="nav-item">
+                        <a class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'enquiries.php') !== false ? 'active' : '' ?>" href="enquiries.php">
+                            <i class="fas fa-person fa-fw me-2"></i>
+                            Enquires
+                        </a>
+                    </li>
                     <li class="nav-item mt-3">
                         <a class="nav-link" href="logout.php">
                             <i class="fas fa-sign-out-alt fa-fw me-2"></i>

@@ -33,14 +33,8 @@ if ($request_method === "POST") {
             case "changePassword":
                 changePassword($data);
                 break;
-            case "registerAdmin":
-                registerAdmin($data);
-                break;
             case "registerInstructor":
                 registerInstructor($data);
-                break;
-            case "registerEmployer":
-                registerEmployer($data);
                 break;
             default:
                 sendResponse(400, "Invalid action");
@@ -129,7 +123,7 @@ function loginUser($data) {
                 if ($instructor_info = $instructor_result->fetch_assoc()) {
                     $user_data['bio'] = $instructor_info['bio'];
                     $user_data['qualifications'] = $instructor_info['qualifications'];
-                    $user_data['expertise_areas'] = $instructor_info['expertise_areas'];
+                    $user_data['specialization'] = $instructor_info['specialization'];
                 }
                 $instructor_result->close();
             } elseif ($row['role'] === 'admin') {
@@ -165,11 +159,11 @@ function forgotPassword($data) {
         $otp = rand(100000, 999999);
         
         // Delete any existing OTPs for this email
-        executeQuery("DELETE FROM user_tokens WHERE email=?", [$email], "s");
+        executeQuery("DELETE FROM password_reset_otps WHERE email=?", [$email], "s");
         
         // Insert new OTP
         $insert_otp = executeQuery(
-            "INSERT INTO user_tokens (user_id, token, expires_at) VALUES ((SELECT id FROM users WHERE email=?), ?, DATE_ADD(NOW(), INTERVAL 10 DAY))",
+            "INSERT INTO password_reset_otps (email, otp, created_at, expires_at) VALUES (?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 15 MINUTE))",
             [$email, $otp],
             "ss"
         );
@@ -191,31 +185,18 @@ function verifyOTP($data) {
     if (!isset($data["email"], $data["otp"])) {
         sendResponse(400, "Email and OTP are required");
     }
+
     $email = $data["email"];
     $otp = $data["otp"];
     
-    // Find user ID from email
-    $user_result = executeQuery("SELECT id FROM users WHERE email=?", [$email], "s")->get_result();
-    if ($user_row = $user_result->fetch_assoc()) {
-        $user_id = $user_row['id'];
-        $user_result->close();
-    } else {
-        sendResponse(400, "User not found");
-    }
-    
     // Check if OTP exists and is valid
-    $stmt = executeQuery(
-        "SELECT * FROM user_tokens WHERE user_id=? AND token=? AND expires_at > NOW()",
-        [$user_id, $otp],
-        "is"
-    );
-
-    if (!$stmt) {
-        sendResponse(500, "Database error occurred");
-    }
-
-    $otp_result = $stmt->get_result();
-    if ($otp_result->num_rows > 0) {
+    $otp_result = executeQuery(
+        "SELECT * FROM password_reset_otps WHERE email=? AND otp=? AND expires_at > NOW()",
+        [$email, $otp],
+        "ss"
+    )->get_result();
+    
+    if ($otp_row = $otp_result->fetch_assoc()) {
         $otp_result->close();
         sendResponse(200, "OTP verified");
     } else {
@@ -235,7 +216,7 @@ function changePassword($data) {
     
     // Check if OTP exists and is valid
     $otp_result = executeQuery(
-        "SELECT * FROM user_tokens WHERE email=? AND otp=? AND expires_at > NOW()",
+        "SELECT * FROM password_reset_otps WHERE email=? AND otp=? AND expires_at > NOW()",
         [$email, $otp],
         "ss"
     )->get_result();
@@ -247,7 +228,7 @@ function changePassword($data) {
         $query = "UPDATE users SET password_hash=? WHERE email=?";
         if (executeQuery($query, [$new_password, $email], "ss")) {
             // Delete used OTP
-            executeQuery("DELETE FROM user_tokens WHERE email=?", [$email], "s");
+            executeQuery("DELETE FROM password_reset_otps WHERE email=?", [$email], "s");
             sendResponse(200, "Password changed successfully");
         } else {
             sendResponse(500, "Failed to change password");
@@ -255,52 +236,6 @@ function changePassword($data) {
     } else {
         $otp_result->close();
         sendResponse(400, "Invalid or expired OTP");
-    }
-}
-
-function registerAdmin($data) {
-    if (!isset($data["name"], $data["email"], $data["password"], $data["access_reason"])) {
-        sendResponse(400, "Name, email, password, and access reason are required");
-    }
-
-    $name = $data["name"];
-    $email = $data["email"];
-    $password = password_hash($data["password"], PASSWORD_BCRYPT);
-    $access_reason = $data["access_reason"];
-    $granted_by = isset($data["granted_by"]) ? $data["granted_by"] : null;
-    $access_level = isset($data["access_level"]) ? $data["access_level"] : 'limited';
-
-    $check_email = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s");
-    $result = $check_email->get_result();
-    if ($result->num_rows > 0) {
-        $result->close(); // Close the result set
-        sendResponse(400, "Email already exists");
-    }
-
-    // Begin transaction
-    global $conn;
-    $conn->begin_transaction();
-
-    try {
-        // Insert into users table
-        $query = "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'admin')";
-        executeQuery($query, [$name, $email, $password], "sss");
-        
-        // Get the newly created user ID
-        $user_id = $conn->insert_id;
-        
-        // Insert into admin_access table
-        $query = "INSERT INTO admin_access (user_id, access_reason, granted_by, access_level) VALUES (?, ?, ?, ?)";
-        executeQuery($query, [$user_id, $access_reason, $granted_by, $access_level], "isis");
-        
-        // Commit transaction
-        $conn->commit();
-        
-        sendResponse(200, "Admin registration successful");
-    } catch (Exception $e) {
-        // Rollback transaction on error
-        $conn->rollback();
-        sendResponse(500, "Admin registration failed: " . $e->getMessage());
     }
 }
 
@@ -313,9 +248,9 @@ function registerInstructor($data) {
     $email = $data["email"];
     $password = password_hash($data["password"], PASSWORD_BCRYPT);
     $bio = isset($data["bio"]) ? $data["bio"] : null;
-    $qualifications = isset($data["qualifications"]) ? $data["qualifications"] : null;
-    $expertise_areas = isset($data["expertise_areas"]) ? $data["expertise_areas"] : null;
-    $years_experience = isset($data["years_experience"]) ? $data["years_experience"] : null;
+    $qualifications = isset($data["qualification"]) ? $data["qualification"] : null;
+    $specialization = isset($data["specialization"]) ? $data["specialization"] : null;
+    $experience_years = isset($data["experience_years"]) ? $data["experience_years"] : null;
 
     $check_email = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s");
     $result = $check_email->get_result();
@@ -335,15 +270,32 @@ function registerInstructor($data) {
         
         // Get the newly created user ID
         $user_id = $conn->insert_id;
-        
+
+        $conn->commit(); // Commit the transaction
+        // Begin a new transaction for instructor details
+        $conn->begin_transaction();
         // Insert into instructor_details table
-        $query = "INSERT INTO instructor_details (user_id, bio, qualifications, expertise_areas, years_experience) VALUES (?, ?, ?, ?, ?)";
-        executeQuery($query, [$user_id, $bio, $qualifications, $expertise_areas, $years_experience], "isssi");
+        $query = "INSERT INTO instructor_details (user_id, bio, qualification, specialization, experience_years) VALUES (?, ?, ?, ?, ?)";
+        executeQuery($query, [$user_id, $bio, $qualifications, $specialization, $experience_years], "isssi");
         
         // Commit transaction
         $conn->commit();
-        
-        sendResponse(200, "Instructor registration successful");
+
+        // Generate token and prepare user data
+        $token = generateJWT($user_id, $email, 'instructor');
+        $user_data = [
+            "id" => $user_id,
+            "email" => $email,
+            "role" => 'instructor',
+            "profile_pic" => null,
+            "name" => $name,
+            "bio" => $bio,
+            "qualifications" => $qualifications,
+            "specialization" => $specialization,
+            "experience_years" => $experience_years
+        ];
+
+        sendResponse(200, "Instructor registration successful", ["token" => $token, "user" => $user_data]);
     } catch (Exception $e) {
         // Rollback transaction on error
         $conn->rollback();
@@ -351,52 +303,4 @@ function registerInstructor($data) {
     }
 }
 
-function registerEmployer($data) {
-    if (!isset($data["name"], $data["email"], $data["password"], $data["company_name"], $data["industry"])) {
-        sendResponse(400, "Name, email, password, company name, and industry are required");
-    }
-
-    $name = $data["name"];
-    $email = $data["email"];
-    $password = password_hash($data["password"], PASSWORD_BCRYPT);
-    $company_name = $data["company_name"];
-    $industry = $data["industry"];
-    $company_size = isset($data["company_size"]) ? $data["company_size"] : null;
-    $company_website = isset($data["company_website"]) ? $data["company_website"] : null;
-    $company_location = isset($data["company_location"]) ? $data["company_location"] : null;
-    $company_description = isset($data["company_description"]) ? $data["company_description"] : null;
-
-    $check_email = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s");
-    $result = $check_email->get_result();
-    if ($result->num_rows > 0) {
-        $result->close(); // Close the result set
-        sendResponse(400, "Email already exists");
-    }
-
-    // Begin transaction
-    global $conn;
-    $conn->begin_transaction();
-
-    try {
-        // Insert into users table
-        $query = "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'employer')";
-        executeQuery($query, [$name, $email, $password], "sss");
-        
-        // Get the newly created user ID
-        $user_id = $conn->insert_id;
-        
-        // Insert into employer_details table
-        $query = "INSERT INTO employer_details (user_id, company_name, industry, company_size, company_website, company_location, company_description) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        executeQuery($query, [$user_id, $company_name, $industry, $company_size, $company_website, $company_location, $company_description], "issssss");
-        
-        // Commit transaction
-        $conn->commit();
-        
-        sendResponse(200, "Employer registration successful");
-    } catch (Exception $e) {
-        // Rollback transaction on error
-        $conn->rollback();
-        sendResponse(500, "Employer registration failed: " . $e->getMessage());
-    }
-}
 ?>

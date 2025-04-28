@@ -233,6 +233,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             );
             
             if ($result) {
+                // If the status is 'approved', send email notification
+                if ($status === 'approved') {
+                    // Get collaborator info and project title
+                    $info_result = executeQuery(
+                        "SELECT u.name, u.email, p.title 
+                         FROM project_collaborations pc
+                         JOIN users u ON pc.user_id = u.id
+                         JOIN projects p ON pc.project_id = p.id
+                         WHERE pc.id=?",
+                        [$collab_id],
+                        "i"
+                    );
+                    
+                    if ($info_result) {
+                        $info_set = $info_result->get_result();
+                        if ($info = $info_set->fetch_assoc()) {
+                            // Include mailer functions
+                            include_once 'backend/mailer.php';
+                            
+                            // Send email notification
+                            sendProjectCollaborationApproval(
+                                $info['email'],
+                                $info['name'],
+                                $info['title']
+                            );
+                        }
+                        $info_set->close();
+                    }
+                }
+                
                 header("Location: student_projects.php?project_id=$project_id&msg=status_updated");
                 exit;
             }

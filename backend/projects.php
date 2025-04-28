@@ -464,6 +464,36 @@ function respondToCollaborationRequest($data, $user_id) {
 
     $query = "UPDATE project_collaborations SET status=? WHERE id=?";
     if (executeQuery($query, [$status, $request_id], "si")) {
+        // If the status is 'approved', send email notification
+        if ($status === 'approved') {
+            // Get collaborator info and project title
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, p.title 
+                 FROM project_collaborations pc
+                 JOIN users u ON pc.user_id = u.id
+                 JOIN projects p ON pc.project_id = p.id
+                 WHERE pc.id=?",
+                [$request_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once 'mailer.php';
+                    
+                    // Send email notification
+                    sendProjectCollaborationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         sendResponse(200, "Collaboration request " . $status);
     } else {
         sendResponse(500, "Failed to update collaboration request");
