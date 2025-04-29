@@ -214,7 +214,7 @@ function verifyOTP($data) {
     }
 }
 function changePassword($data) {
-    if (!isset($data["email"], $data["token"], $data["new_password"])) {
+    if (!isset($data["email"], $data["otp"], $data["new_password"])) {
         sendResponse(400, "Email, token, and new password are required");
     }
 
