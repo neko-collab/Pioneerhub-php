@@ -85,7 +85,7 @@ include 'includes/header.php';
                 <div class="card-body">
                     <div class="text-center mb-4">
                         <?php if ($instructor['profile_pic']): ?>
-                            <img src="../uploads/<?= htmlspecialchars($instructor['profile_pic']) ?>" class="rounded-circle" style="width: 150px; height: 150px; object-fit: cover;">
+                            <img src="/Pioneer/uploads/<?= htmlspecialchars($instructor['profile_pic']) ?>" class="rounded-circle" style="width: 150px; height: 150px; object-fit: cover;">
                         <?php else: ?>
                             <img src="https://ui-avatars.com/api/?name=<?= urlencode($instructor['name']) ?>&background=random" class="rounded-circle" width="150" height="150">
                         <?php endif; ?>

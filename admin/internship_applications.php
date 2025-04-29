@@ -154,24 +154,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $file_extension = strtolower(pathinfo($_FILES['cv_file']['name'], PATHINFO_EXTENSION));
             
             if (in_array($file_extension, $allowed_extensions)) {
-                // Create uploads/cvs directory if it doesn't exist
-                $upload_dir = '../uploads/cvs';
-                if (!file_exists($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
-                }
+                // Use the handleFileUpload utility function
+                include_once '../backend/utilities.php';
+                $cv_path = handleFileUpload($_FILES['cv_file'], $user_id, 'cv');
                 
-                // Generate unique filename
-                $cv_filename = 'cv_' . $user_id . '_' . time() . '.' . $file_extension;
-                $upload_path = $upload_dir . '/' . $cv_filename;
-                
-                // Move uploaded file
-                if (move_uploaded_file($_FILES['cv_file']['tmp_name'], $upload_path)) {
+                if ($cv_path) {
                     // Update user's CV in the users table
                     executeQuery(
                         "UPDATE users SET cv = ? WHERE id = ?",
-                        [$cv_filename, $user_id],
+                        [$cv_path, $user_id],
                         "si"
                     );
+                    $cv_filename = $cv_path;
                 } else {
                     header("Location: internship_applications.php?id=$internship_id&error=upload_failed");
                     exit;
@@ -469,14 +463,14 @@ include 'includes/header.php';
                                     <td><?= $app['id'] ?></td>
                                     <td>
                                         <?php if ($app['profile_pic']): ?>
-                                            <img src="../uploads/<?= htmlspecialchars($app['profile_pic']) ?>" class="rounded-circle me-2" width="25" height="25">
+                                            <img src="<?= getFileUrl($app['profile_pic']) ?>" class="rounded-circle me-2" width="25" height="25">
                                         <?php endif; ?>
                                         <?= htmlspecialchars($app['name']) ?>
                                     </td>
                                     <td><?= htmlspecialchars($app['email']) ?></td>
                                     <td>
                                         <?php if ($app['cv']): ?>
-                                            <a href="../uploads/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <a href="<?= getFileUrl($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-file-pdf"></i> View CV
                                             </a>
                                         <?php else: ?>

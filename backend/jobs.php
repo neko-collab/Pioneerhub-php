@@ -134,21 +134,10 @@ function applyJob($data, $user_id, $user_role) {
         $check_result_set->close();
     }
     
-    // Handle resume/CV file upload
-    if (isset($_FILES['cv']) && $_FILES['cv']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = 'uploads/job_cv/';
-        
-        // Create directory if it doesn't exist
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-        
-        $file_name = $user_id . '_' . time() . '_' . basename($_FILES['cv']['name']);
-        $target_file = $upload_dir . $file_name;
-        
-        if (move_uploaded_file($_FILES['cv']['tmp_name'], $target_file)) {
-            $cv_path = $target_file;
-        } else {
+    // Handle resume/CV file upload using the utility function
+    if (isset($_FILES['cv'])) {
+        $cv_path = handleFileUpload($_FILES['cv'], $user_id, 'job_cv');
+        if ($cv_path === null && $_FILES['cv']['error'] !== UPLOAD_ERR_NO_FILE) {
             sendResponse(500, "Failed to upload CV file");
         }
     }
@@ -227,6 +216,37 @@ function toggleApplicationStatus($data, $user_role) {
 
     $query = "UPDATE job_applications SET status=? WHERE id=?";
     if (executeQuery($query, [$status, $application_id], "si")) {
+        // If status is 'selected', send email notification
+        if ($status === 'selected') {
+            // Get applicant info and job details
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, j.title, j.company 
+                 FROM job_applications ja
+                 JOIN users u ON ja.user_id = u.id
+                 JOIN jobs j ON ja.job_id = j.id
+                 WHERE ja.id=?",
+                [$application_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once 'mailer.php';
+                    
+                    // Send email notification
+                    sendJobApplicationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title'],
+                        $info['company']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         sendResponse(200, "Application status updated successfully");
     } else {
         sendResponse(500, "Failed to update application status");

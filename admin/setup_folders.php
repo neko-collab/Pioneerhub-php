@@ -10,11 +10,13 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 }
 
 // Create folder structure
+$base_dir = $_SERVER['DOCUMENT_ROOT'] . '/Pioneer/uploads/';
 $folders = [
-    '../uploads',
-    '../uploads/cvs',
-    '../uploads/profiles',
-    '../uploads/documents'
+    $base_dir,
+    $base_dir . 'cv',
+    $base_dir . 'job_cv',
+    $base_dir . 'profiles',
+    $base_dir . 'documents'
 ];
 
 $results = [];

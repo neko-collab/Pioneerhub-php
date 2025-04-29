@@ -97,4 +97,59 @@ function bearerToken() {
     }
     return null;
 }
+
+/**
+ * Handles file uploads with a standardized approach
+ * 
+ * @param array $file The $_FILES array element for the uploaded file
+ * @param int $user_id The ID of the user uploading the file
+ * @param string $subdir The subdirectory within the uploads folder
+ * @return string|null The relative path to the file or null on failure
+ */
+function handleFileUpload($file, $user_id, $subdir = '') {
+    // Validate file
+    if (!isset($file) || $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+    
+    // Define base directory and relative path
+    $base_dir = $_SERVER['DOCUMENT_ROOT'] . '/Pioneer/uploads/';
+    $relative_dir = $subdir ? trim($subdir, '/') . '/' : '';
+    $upload_dir = $base_dir . $relative_dir;
+    
+    // Create directory if it doesn't exist
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0777, true);
+    }
+    
+    // Generate unique filename
+    $file_name = $user_id . '_' . time() . '_' . basename($file['name']);
+    $target_file = $upload_dir . $file_name;
+    
+    // Upload file
+    if (move_uploaded_file($file['tmp_name'], $target_file)) {
+        // Return only the relative path for database storage
+        return $relative_dir . $file_name;
+    }
+    
+    return null;
+}
+
+/**
+ * Gets the full URL path for a stored file
+ * 
+ * @param string $relativePath The relative path stored in the database
+ * @return string The full URL path to the file
+ */
+function getFileUrl($relativePath) {
+    if (empty($relativePath)) {
+        return null;
+    }
+    
+    // Define base URL for files
+    $base_url = '/Pioneer/uploads/';
+    
+    // Return full URL path
+    return $base_url . $relativePath;
+}
 ?>

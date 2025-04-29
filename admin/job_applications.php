@@ -154,24 +154,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $file_extension = strtolower(pathinfo($_FILES['cv_file']['name'], PATHINFO_EXTENSION));
             
             if (in_array($file_extension, $allowed_extensions)) {
-                // Create uploads/cvs directory if it doesn't exist
-                $upload_dir = '../uploads/job_cv';
-                if (!file_exists($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
-                }
+                // Use the handleFileUpload utility function
+                $cv_path = handleFileUpload($_FILES['cv_file'], $user_id, 'job_cv');
                 
-                // Generate unique filename
-                $cv_filename = 'cv_' . $user_id . '_' . time() . '.' . $file_extension;
-                $upload_path = $upload_dir . '/' . $cv_filename;
-                
-                // Move uploaded file
-                if (move_uploaded_file($_FILES['cv_file']['tmp_name'], $upload_path)) {
+                if ($cv_path) {
                     // Update user's CV in the users table
                     executeQuery(
                         "UPDATE users SET cv = ? WHERE id = ?",
-                        [$cv_filename, $user_id],
+                        [$cv_path, $user_id],
                         "si"
                     );
+                    $cv_filename = $cv_path;
                 } else {
                     header("Location: job_applications.php?id=$job_id&error=upload_failed");
                     exit;
@@ -481,6 +474,7 @@ include 'includes/header.php';
                             <th>Applicant</th>
                             <th>Email</th>
                             <th>CV</th>
+                            <th>Cover Letter</th>
                             <th>Applied Date</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -489,33 +483,45 @@ include 'includes/header.php';
                     <tbody>
                         <?php if (empty($applications)): ?>
                             <tr>
-                                <td colspan="7" class="text-center">No applications found.</td>
+                                <td colspan="8" class="text-center">No applications found.</td>
                             </tr>
                         <?php else: ?>
-                            <?php foreach ($applications as $app): ?>
+                            <?php foreach ($applications as $application): ?>
                                 <tr>
-                                    <td><?= $app['id'] ?></td>
+                                    <td><?= $application['id'] ?></td>
                                     <td>
-                                        <?php if ($app['profile_pic']): ?>
-                                            <img src="../uploads/<?= htmlspecialchars($app['profile_pic']) ?>" class="rounded-circle me-2" width="25" height="25">
+                                        <?php if ($application['profile_pic']): ?>
+                                            <img src="<?= getFileUrl($application['profile_pic']) ?>" class="rounded-circle me-2" width="25" height="25">
                                         <?php endif; ?>
-                                        <?= htmlspecialchars($app['name']) ?>
+                                        <?= htmlspecialchars($application['name']) ?>
                                     </td>
-                                    <td><?= htmlspecialchars($app['email']) ?></td>
+                                    <td><?= htmlspecialchars($application['email']) ?></td>
                                     <td>
-                                        <?php if ($app['cv']): ?>
-                                            <a href="../uploads/cvs/<?= htmlspecialchars($app['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
+                                        <?php if ($application['cv']): ?>
+                                            <a href="<?= getFileUrl($application['cv']) ?>" target="_blank" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-file-pdf"></i> View CV
                                             </a>
                                         <?php else: ?>
-                                            <span class="text-muted">No CV</span>
+                                            <span class="badge bg-secondary">No CV</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?= date('M d, Y', strtotime($app['applied_at'])) ?></td>
+                                    <td>
+                                        <?php if ($application['cover_letter']): ?>
+                                            <button class="btn btn-sm btn-outline-primary view-cover-letter" 
+                                                    data-bs-toggle="modal" 
+                                                    data-bs-target="#coverLetterModal" 
+                                                    data-content="<?= htmlspecialchars($application['cover_letter']) ?>">
+                                                <i class="fas fa-file-alt"></i> View
+                                            </button>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">None</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= date('M d, Y', strtotime($application['applied_at'])) ?></td>
                                     <td>
                                         <?php 
                                         $status_class = '';
-                                        switch ($app['status']) {
+                                        switch ($application['status']) {
                                             case 'accepted':
                                                 $status_class = 'bg-success';
                                                 break;
@@ -530,23 +536,23 @@ include 'includes/header.php';
                                         }
                                         ?>
                                         <span class="badge <?= $status_class ?>">
-                                            <?= ucfirst($app['status']) ?>
+                                            <?= ucfirst($application['status']) ?>
                                         </span>
                                     </td>
                                     <td>
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" id="statusDropdown<?= $app['id'] ?>" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" id="statusDropdown<?= $application['id'] ?>" data-bs-toggle="dropdown" aria-expanded="false">
                                                 Change Status
                                             </button>
-                                            <ul class="dropdown-menu" aria-labelledby="statusDropdown<?= $app['id'] ?>">
-                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $app['id'] ?>&status=pending">Pending</a></li>
-                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $app['id'] ?>&status=reviewed">Reviewed</a></li>
-                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $app['id'] ?>&status=accepted">Accepted</a></li>
-                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $app['id'] ?>&status=rejected">Rejected</a></li>
+                                            <ul class="dropdown-menu" aria-labelledby="statusDropdown<?= $application['id'] ?>">
+                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $application['id'] ?>&status=pending">Pending</a></li>
+                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $application['id'] ?>&status=reviewed">Reviewed</a></li>
+                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $application['id'] ?>&status=accepted">Accepted</a></li>
+                                                <li><a class="dropdown-item" href="job_applications.php?id=<?= $job_id ?>&application_id=<?= $application['id'] ?>&status=rejected">Rejected</a></li>
                                             </ul>
                                         </div>
                                         
-                                        <a href="job_applications.php?id=<?= $job_id ?>&delete_id=<?= $app['id'] ?>" class="btn btn-sm btn-danger mt-1" onclick="return confirm('Are you sure you want to delete this application?')">
+                                        <a href="job_applications.php?id=<?= $job_id ?>&delete_id=<?= $application['id'] ?>" class="btn btn-sm btn-danger mt-1" onclick="return confirm('Are you sure you want to delete this application?')">
                                             <i class="fas fa-trash"></i> Delete
                                         </a>
                                     </td>

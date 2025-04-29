@@ -248,21 +248,10 @@ function applyInternship($data, $user_id, $user_role) {
     $internship_id = $data["internship_id"];
     $cv_path = null;
     
-    // Handle CV file upload
-    if (isset($_FILES['cv']) && $_FILES['cv']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = '../uploads/cv/';
-        
-        // Create directory if it doesn't exist
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-        
-        $file_name = $user_id . '_' . time() . '_' . basename($_FILES['cv']['name']);
-        $target_file = $upload_dir . $file_name;
-        
-        if (move_uploaded_file($_FILES['cv']['tmp_name'], $target_file)) {
-            $cv_path = $target_file;
-        } else {
+    // Handle CV file upload using the utility function
+    if (isset($_FILES['cv'])) {
+        $cv_path = handleFileUpload($_FILES['cv'], $user_id, 'cv');
+        if ($cv_path === null && $_FILES['cv']['error'] !== UPLOAD_ERR_NO_FILE) {
             sendResponse(500, "Failed to upload CV file");
         }
     }
@@ -330,8 +319,45 @@ function toggleApplicationStatus($data, $user_role) {
     $application_id = $data["application_id"];
     $status = $data["status"];
 
+    // Validate status
+    $valid_statuses = ['pending', 'reviewed', 'accepted', 'rejected'];
+    if (!in_array($status, $valid_statuses)) {
+        sendResponse(400, "Invalid status value");
+    }
+
     $query = "UPDATE internship_applications SET status=? WHERE id=?";
     if (executeQuery($query, [$status, $application_id], "si")) {
+        // If status is 'accepted', send email notification
+        if ($status === 'accepted') {
+            // Get applicant info and internship details
+            $info_result = executeQuery(
+                "SELECT u.name, u.email, i.title, i.company 
+                 FROM internship_applications ia
+                 JOIN users u ON ia.user_id = u.id
+                 JOIN internships i ON ia.internship_id = i.id
+                 WHERE ia.id=?",
+                [$application_id],
+                "i"
+            );
+            
+            if ($info_result) {
+                $info_set = $info_result->get_result();
+                if ($info = $info_set->fetch_assoc()) {
+                    // Include mailer functions
+                    include_once 'mailer.php';
+                    
+                    // Send email notification
+                    sendInternshipApplicationApproval(
+                        $info['email'],
+                        $info['name'],
+                        $info['title'],
+                        $info['company']
+                    );
+                }
+                $info_set->close();
+            }
+        }
+        
         sendResponse(200, "Application status updated successfully");
     } else {
         sendResponse(500, "Failed to update application status");

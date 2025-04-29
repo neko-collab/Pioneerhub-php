@@ -151,21 +151,21 @@ function forgotPassword($data) {
     if (!isset($data["email"])) {
         sendResponse(400, "Email is required");
     }
-
     $email = $data["email"];
-
-    $result = executeQuery("SELECT * FROM users WHERE email=?", [$email], "s")->get_result();
+    
+    $result = executeQuery("SELECT id FROM users WHERE email=?", [$email], "s")->get_result();
     if ($row = $result->fetch_assoc()) {
+        $user_id = $row['id'];
         $otp = rand(100000, 999999);
         
         // Delete any existing OTPs for this email
-        executeQuery("DELETE FROM password_reset_otps WHERE email=?", [$email], "s");
+        executeQuery("DELETE FROM user_tokens WHERE email=?", [$email], "s");
         
         // Insert new OTP
         $insert_otp = executeQuery(
-            "INSERT INTO password_reset_otps (email, otp, created_at, expires_at) VALUES (?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 15 MINUTE))",
-            [$email, $otp],
-            "ss"
+            "INSERT INTO user_tokens (user_id, token, created_at, expires_at) VALUES (?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 10 DAY))",
+            [$user_id, $otp],
+            "is"
         );
         
         if ($insert_otp && sendEmailOTP($email, $otp)) {
@@ -180,7 +180,6 @@ function forgotPassword($data) {
         sendResponse(400, "User not found");
     }
 }
-
 function verifyOTP($data) {
     if (!isset($data["email"], $data["otp"])) {
         sendResponse(400, "Email and OTP are required");
@@ -189,53 +188,72 @@ function verifyOTP($data) {
     $email = $data["email"];
     $otp = $data["otp"];
     
-    // Check if OTP exists and is valid
-    $otp_result = executeQuery(
-        "SELECT * FROM password_reset_otps WHERE email=? AND otp=? AND expires_at > NOW()",
-        [$email, $otp],
-        "ss"
-    )->get_result();
-    
-    if ($otp_row = $otp_result->fetch_assoc()) {
-        $otp_result->close();
-        sendResponse(200, "OTP verified");
+    // Find user ID from email
+    $user_result = executeQuery("SELECT id FROM users WHERE email=?", [$email], "s")->get_result();
+    if ($user_row = $user_result->fetch_assoc()) {
+        $user_id = $user_row['id'];
+        $user_result->close();
+        
+        // Check if OTP exists and is valid
+        $otp_result = executeQuery( 
+            "SELECT * FROM user_tokens WHERE user_id=? AND token=? AND expires_at > NOW()",
+            [$user_id, $otp],
+            "is"
+        )->get_result();
+        
+        if ($otp_row = $otp_result->fetch_assoc()) {
+            $otp_result->close();
+            sendResponse(200, "OTP verified");
+        } else {
+            $otp_result->close();
+            sendResponse(400, "Invalid or expired OTP");
+        }
     } else {
-        $otp_result->close();
-        sendResponse(400, "Invalid or expired OTP");
+        $user_result->close();
+        sendResponse(400, "User not found");
     }
 }
-
 function changePassword($data) {
-    if (!isset($data["email"], $data["otp"], $data["new_password"])) {
-        sendResponse(400, "Email, OTP, and new password are required");
+    if (!isset($data["email"], $data["token"], $data["new_password"])) {
+        sendResponse(400, "Email, token, and new password are required");
     }
 
     $email = $data["email"];
-    $otp = $data["otp"];
+    $token = $data["otp"];
     $new_password = password_hash($data["new_password"], PASSWORD_BCRYPT);
     
-    // Check if OTP exists and is valid
-    $otp_result = executeQuery(
-        "SELECT * FROM password_reset_otps WHERE email=? AND otp=? AND expires_at > NOW()",
-        [$email, $otp],
-        "ss"
-    )->get_result();
-    
-    if ($otp_row = $otp_result->fetch_assoc()) {
-        $otp_result->close();
+    // Find user ID from email
+    $user_result = executeQuery("SELECT id FROM users WHERE email=?", [$email], "s")->get_result();
+    if ($user_row = $user_result->fetch_assoc()) {
+        $user_id = $user_row['id'];
+        $user_result->close();
         
-        // Update password
-        $query = "UPDATE users SET password_hash=? WHERE email=?";
-        if (executeQuery($query, [$new_password, $email], "ss")) {
-            // Delete used OTP
-            executeQuery("DELETE FROM password_reset_otps WHERE email=?", [$email], "s");
-            sendResponse(200, "Password changed successfully");
+        // Check if token exists and is valid
+        $token_result = executeQuery(
+            "SELECT * FROM user_tokens WHERE user_id=? AND token=? AND expires_at > NOW()",
+            [$user_id, $token],
+            "is"
+        )->get_result();
+        
+        if ($token_row = $token_result->fetch_assoc()) {
+            $token_result->close();
+            
+            // Update password
+            $query = "UPDATE users SET password_hash=? WHERE id=?";
+            if (executeQuery($query, [$new_password, $user_id], "si")) {
+                // Delete used token
+                executeQuery("DELETE FROM user_tokens WHERE user_id=?", [$user_id], "i");
+                sendResponse(200, "Password changed successfully");
+            } else {
+                sendResponse(500, "Failed to change password");
+            }
         } else {
-            sendResponse(500, "Failed to change password");
+            $token_result->close();
+            sendResponse(400, "Invalid or expired token");
         }
     } else {
-        $otp_result->close();
-        sendResponse(400, "Invalid or expired OTP");
+        $user_result->close();
+        sendResponse(400, "User not found");
     }
 }
 
